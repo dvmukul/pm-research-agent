@@ -19,9 +19,24 @@ This is also a working prototype of a broader pattern I care about: **agentic wo
 
 ---
 
+## What's in this repo
+
+| Module | What it does |
+|---|---|
+| `agent.py` | Core research agent — autonomously searches and generates a competitive brief |
+| `scorer.py` | Scores a brief across 5 strategic dimensions and outputs a threat level |
+| `batch.py` | Researches and scores multiple competitors in one run, outputs a ranked landscape |
+| `diff.py` | Compares two briefs over time, surfaces strategic changes and threat trajectory |
+| `outputs/slack_output.py` | Pushes briefs and scorecards to a Slack channel via webhook |
+| `outputs/notion_output.py` | Creates a Notion database page for each brief with scorecard properties |
+
+---
+
 ## How it works
 
-The agent runs an autonomous multi-step research loop using Claude + web search:
+### 1. Research Agent (`agent.py`)
+
+Runs an autonomous multi-step research loop using Claude + web search:
 
 ```
 User Input (target company/product)
@@ -29,7 +44,6 @@ User Input (target company/product)
         ▼
 ┌─────────────────────────────────┐
 │        Research Agent Loop      │
-│                                 │
 │  1. Decide what to search for   │
 │  2. Run web search              │
 │  3. Evaluate results            │
@@ -41,87 +55,155 @@ User Input (target company/product)
 Structured Competitive Brief (Markdown)
 ```
 
-The key design decision: **the agent decides its own search strategy**. It doesn't follow a fixed script — it reads intermediate results and determines what gaps remain before synthesizing. This is the difference between a pipeline and an agent.
+The agent decides its own search strategy. It doesn't follow a fixed script — it reads intermediate results and determines what gaps remain before synthesizing.
 
----
+### 2. Scoring Layer (`scorer.py`)
 
-## Output structure
+Takes a brief and scores the competitor across five strategic dimensions:
 
-Every brief covers:
+| Dimension | What it measures |
+|---|---|
+| **Market Overlap** | How directly do they compete for the same customers and budget? |
+| **AI Maturity** | How deeply is AI integrated — native or bolted on? |
+| **Execution Velocity** | How fast are they shipping meaningful product changes? |
+| **Distribution Strength** | Brand, channels, partnerships, existing contracts |
+| **Resource Depth** | Funding, headcount — how long can they sustain a fight? |
 
-1. Company / Product Overview
-2. Core Value Proposition
-3. Target Customer & ICP
-4. Key Features & Differentiators
-5. Pricing & Packaging
-6. Competitive Landscape
-7. Recent Moves (last 6–12 months)
-8. Strengths & Weaknesses
-9. Strategic Implications for a competing PM
+Output: a composite score (1–10) + overall threat level: 🔴 Critical / 🟠 High / 🟡 Medium / 🟢 Low
 
-See a full example: [`sample_output/notion-ai-brief.md`](sample_output/notion-ai-brief.md)
+### 3. Batch Mode (`batch.py`)
+
+Research and score an entire competitive landscape in one command. Outputs:
+- Individual brief files per competitor
+- `landscape.md` — a ranked summary table sorted by threat level
+
+### 4. Diff Mode (`diff.py`)
+
+Compare two briefs for the same competitor across time. Surfaces:
+- Threat trajectory (↑ Escalating / → Stable / ↓ De-escalating)
+- New features and strategic moves
+- ICP drift — are they moving toward your customers?
+- AI maturity delta
+- Strategic implications for a competing PM
+
+### 5. Outputs (Slack + Notion)
+
+Push briefs and scorecards directly to your workspace:
+- **Slack:** Formatted Block Kit message to any channel via webhook
+- **Notion:** New database page with scorecard properties, filterable by threat level
 
 ---
 
 ## Quickstart
 
-### 1. Clone the repo
+### Install
 
 ```bash
 git clone https://github.com/dvmukul/pm-research-agent.git
 cd pm-research-agent
-```
-
-### 2. Install dependencies
-
-```bash
 pip install -r requirements.txt
-```
-
-### 3. Set your Anthropic API key
-
-```bash
 export ANTHROPIC_API_KEY=your_key_here
 ```
 
-Get a key at [console.anthropic.com](https://console.anthropic.com)
-
-### 4. Run the agent
+### Research a single competitor
 
 ```bash
-# Print brief to terminal
 python agent.py --target "Salesforce Einstein"
+python agent.py --target "Intercom Fin AI" --output briefs/intercom.md
+```
 
-# Save to a markdown file
-python agent.py --target "Intercom Fin AI" --output brief.md
+### Score a brief
 
-# Quiet mode (no progress output)
-python agent.py --target "HubSpot AI" --quiet
+```bash
+python scorer.py --brief briefs/intercom.md
+python scorer.py --brief briefs/intercom.md --json   # structured JSON output
+```
+
+### Research + score in one step
+
+```bash
+python agent.py --target "Notion AI" --output briefs/notion.md && \
+python scorer.py --brief briefs/notion.md
+```
+
+### Run a full competitive landscape
+
+```bash
+# Comma-separated
+python batch.py --targets "Notion AI, Coda, Confluence AI, ClickUp AI" --output-dir briefs/
+
+# From a file
+python batch.py --targets-file competitors.txt --output-dir briefs/ --context "Q2 2025 review"
+```
+
+### Diff two briefs over time
+
+```bash
+python diff.py --before briefs/notion-jan.md --after briefs/notion-apr.md --target "Notion AI"
+python diff.py --before briefs/notion-jan.md --after briefs/notion-apr.md --output diffs/notion-delta.md
+```
+
+### Push to Slack
+
+```bash
+export SLACK_WEBHOOK_URL=https://hooks.slack.com/...
+python outputs/slack_output.py --brief briefs/notion.md --target "Notion AI"
+python outputs/slack_output.py --brief briefs/notion.md --dry-run   # preview without sending
+```
+
+### Push to Notion
+
+```bash
+export NOTION_API_KEY=secret_xxx
+export NOTION_DATABASE_ID=your-database-id
+python outputs/notion_output.py --brief briefs/notion.md --target "Notion AI" --category "AI"
 ```
 
 ---
 
-## Example output
+## Example outputs
 
+### Terminal output (batch run)
 ```
-🔍 PM Research Agent starting...
+📋 Batch run: 3 competitor(s)
+   Targets: Notion AI, Coda, Confluence AI
+   Output:  briefs/
 
-   Target: Notion AI
-   Model:  claude-opus-4-5
-   Max searches: 10
-
-────────────────────────────────────────────────────────────
+════════════════════════════════════════════════════════════
+  [1/3] Notion AI
+════════════════════════════════════════════════════════════
   🌐 Search [1]: Notion AI features pricing 2025
-  🌐 Search [2]: Notion AI vs Microsoft Copilot competitive comparison
-  🌐 Search [3]: Notion AI enterprise announcements 2024 2025
-  🌐 Search [4]: Notion Mail product launch
-  🌐 Search [5]: Notion customer reviews G2 Capterra weaknesses
-────────────────────────────────────────────────────────────
-✅ Research complete (5 iterations)
+  🌐 Search [2]: Notion AI vs Microsoft Copilot
+  🌐 Search [3]: Notion enterprise announcements 2025
+  🎯 Scoring threat level for: Notion AI
+     🟠 High threat  |  Composite: 7.4/10
 
-# Competitive Brief: Notion AI
+════════════════════════════════════════════════════════════
+  [2/3] Coda
 ...
+
+✅ Batch complete
+   3 brief(s) saved to briefs/
+   Landscape summary: briefs/landscape.md
 ```
+
+### Scorecard output
+```
+## Threat Scorecard: Notion AI
+
+**Overall Threat Level:** 🟠 High
+**Composite Score:** 7.4 / 10
+
+| Dimension          | Score  | Visual       | Rationale                                          |
+|--------------------|--------|--------------|----------------------------------------------------|
+| Market Overlap     | 8/10   | ████████░░   | Direct overlap on knowledge management and docs    |
+| AI Maturity        | 7/10   | ███████░░░   | Native AI on structured data is a real moat        |
+| Execution Velocity | 8/10   | ████████░░   | Notion Mail + Calendar in one quarter signals pace |
+| Distribution       | 7/10   | ███████░░░   | Strong SMB brand but enterprise flank exposed      |
+| Resource Depth     | 7/10   | ███████░░░   | $10B valuation, well-capitalized                   |
+```
+
+Full example brief: [`sample_output/notion-ai-brief.md`](sample_output/notion-ai-brief.md)
 
 ---
 
@@ -131,16 +213,11 @@ python agent.py --target "HubSpot AI" --quiet
 
 **Why agentic (not a fixed pipeline)?** Fixed pipelines break when the target is unusual or when the first search returns stale results. The agent adapts — if it can't find pricing, it searches differently. If a product was acquired recently, it notices and adjusts the framing.
 
+**Why five scoring dimensions?** They were chosen to map directly to the questions a PM asks in a real competitive review — not generic "strengths/weaknesses." Each dimension is specific enough to score from a brief, and together they produce a threat *profile*, not just a threat number.
+
+**Why a diff mode?** A one-time brief is a snapshot. What matters to a PM is *momentum* — is this competitor accelerating or stalling? The diff mode is what turns this from a research tool into an ongoing intelligence system.
+
 **Why Markdown output?** Briefs need to be shareable. Markdown renders cleanly in Notion, Confluence, GitHub, and Linear — everywhere a PM actually works.
-
----
-
-## What's next
-
-- [ ] Batch mode — research a list of competitors in one run
-- [ ] Diff mode — compare two briefs to surface what changed over time
-- [ ] Slack/Notion output — push the brief directly to a workspace
-- [ ] Scoring layer — auto-rate competitor threat level based on brief content
 
 ---
 
